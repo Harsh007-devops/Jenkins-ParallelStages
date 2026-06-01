@@ -1,0 +1,130 @@
+pipeline {
+
+```
+agent any
+
+tools {
+    maven 'mymaven'
+    
+}
+
+options {
+    timeout(time: 30, unit: 'MINUTES')
+    buildDiscarder(logRotator(
+        numToKeepStr: '10',
+        artifactNumToKeepStr: '5'
+    ))
+    timestamps()
+}
+
+parameters {
+
+    choice(
+        name: 'ENVIRONMENT',
+        choices: ['DEV', 'QA', 'PROD'],
+        description: 'Select deployment environment'
+    )
+
+    booleanParam(
+        name: 'RUN_INTEGRATION_TESTS',
+        defaultValue: true,
+        description: 'Run Integration Tests'
+    )
+}
+
+environment {
+    APP_NAME = "Parallel-CI-App"
+    BUILD_VERSION = "${BUILD_NUMBER}"
+}
+
+stages {
+
+    stage('Checkout') {
+        steps {
+            echo "Checking out source code..."
+            git branch: 'main',
+                url: 'https://github.com/Harsh007-devops/Jenkins-ParallelStages.git'
+        }
+    }
+
+    stage('Build') {
+        steps {
+            echo "Building ${APP_NAME}"
+            sh 'mvn clean compile'
+        }
+    }
+
+    stage('Parallel Validation') {
+
+        parallel {
+
+            stage('Unit Tests') {
+                steps {
+                    echo 'Executing Unit Tests'
+                    sh 'mvn test'
+                }
+            }
+
+            stage('Integration Tests') {
+                when {
+                    expression {
+                        params.RUN_INTEGRATION_TESTS
+                    }
+                }
+
+                steps {
+                    echo 'Executing Integration Tests'
+                    sh '''
+                        echo "Running Integration Tests..."
+                        sleep 15
+                    '''
+                }
+            }
+
+            stage('Code Analysis') {
+                steps {
+                    echo 'Performing Code Analysis'
+                    sh '''
+                        echo "Running PMD Analysis"
+                        mvn pmd:pmd
+                    '''
+                }
+            }
+        }
+    }
+
+    stage('Package') {
+        steps {
+            echo 'Packaging Application'
+            sh 'mvn package'
+        }
+    }
+
+    stage('Archive Artifacts') {
+        steps {
+            archiveArtifacts(
+                artifacts: 'target/*.jar',
+                fingerprint: true
+            )
+        }
+    }
+}
+
+post {
+
+    success {
+        echo "Build Successful - ${BUILD_NUMBER}"
+    }
+
+    failure {
+        echo "Build Failed - ${BUILD_NUMBER}"
+    }
+
+    always {
+        junit '**/target/surefire-reports/*.xml'
+        cleanWs()
+    }
+}
+```
+
+}
